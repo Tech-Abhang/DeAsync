@@ -9,7 +9,7 @@ async function simpleDemo() {
   
   validateEnvironment();
   const deployment = loadDeploymentInfo();
-  const networkConfig = getNetworkConfig('localhost');
+  const networkConfig = getNetworkConfig('sepolia');
   
   const sdk = new DeAsyncSDK(
     deployment.address,
@@ -22,13 +22,13 @@ async function simpleDemo() {
     
     console.log('📤 Submitting simple task: double a number\n');
     
-    const result = await sdk.deAsync(
-      (x) => x * 2,    // Function to execute
-      21,             // Input: 21
-      {
+        const result = await sdk.deAsync(
+    (x) => x * 2,  // Function to execute
+    21,           // Input: 21
+    {             // ✅ Added missing opening brace
         reward: '0.001',
         timeout: 15000
-      }
+    }             // ✅ Added missing closing brace
     );
 
     console.log('\n✅ Task completed!');

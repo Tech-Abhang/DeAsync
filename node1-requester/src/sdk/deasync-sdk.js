@@ -32,15 +32,14 @@ export class DeAsyncSDK extends EventEmitter {
 
   async initialize() {
     try {
-      // Verify connection
-      const balance = await this.wallet.getBalance();
+      // ✅ Fixed: Use provider.getBalance instead of wallet.getBalance
+      const balance = await this.provider.getBalance(this.wallet.address);
       const network = await this.provider.getNetwork();
       
       console.log(`🔗 Connected to ${network.name} (Chain ID: ${network.chainId})`);
       console.log(`👤 Wallet: ${this.wallet.address}`);
       console.log(`💰 Balance: ${ethers.formatEther(balance)} ETH`);
       
-      // Test contract connection
       const taskCount = await this.contract.taskCount();
       console.log(`📊 Current task count: ${taskCount}`);
       
@@ -54,7 +53,6 @@ export class DeAsyncSDK extends EventEmitter {
   }
 
   _setupEventListeners() {
-    // Listen for new tasks
     this.contract.on('NewTask', (taskId, requester, funcType, data, event) => {
       const taskInfo = {
         taskId: Number(taskId),
@@ -69,7 +67,6 @@ export class DeAsyncSDK extends EventEmitter {
       this.emit('newTask', taskInfo);
     });
 
-    // Listen for task claims
     this.contract.on('TaskClaimed', (taskId, worker, event) => {
       const claimInfo = {
         taskId: Number(taskId),
@@ -82,7 +79,6 @@ export class DeAsyncSDK extends EventEmitter {
       this.emit('taskClaimed', claimInfo);
     });
 
-    // Listen for task completions
     this.contract.on('TaskCompleted', (taskId, result, event) => {
       const completionInfo = {
         taskId: Number(taskId),
@@ -94,7 +90,6 @@ export class DeAsyncSDK extends EventEmitter {
       console.log(`✅ Task #${completionInfo.taskId} completed!`);
       this.emit('taskCompleted', completionInfo);
       
-      // Resolve any waiting promises
       if (this.taskQueue.has(Number(taskId))) {
         const { resolve } = this.taskQueue.get(Number(taskId));
         this.taskQueue.delete(Number(taskId));
@@ -124,7 +119,6 @@ export class DeAsyncSDK extends EventEmitter {
     try {
       console.log('📤 Preparing task submission...');
       
-      // Prepare task payload
       const taskPayload = JSON.stringify({
         func: funcCode.toString(),
         input: inputData,
@@ -133,23 +127,16 @@ export class DeAsyncSDK extends EventEmitter {
 
       const rewardWei = ethers.parseEther(reward.toString());
       
-      console.log(`💰 Reward: ${reward} ETH`);
-      console.log(`📝 Function: ${funcCode.toString().slice(0, 50)}...`);
-      console.log(`📊 Input: ${JSON.stringify(inputData)}`);
-      
-      // Submit transaction
-      const tx = await this.contract.submitTask(funcType, taskPayload, { 
+      const tx = await this.contract.submitTask(funcType, taskPayload, {
         value: rewardWei,
         gasLimit: 500000
       });
       
       console.log(`⏳ Transaction submitted: ${tx.hash}`);
       
-      // Wait for confirmation
       const receipt = await tx.wait();
       console.log(`✅ Transaction confirmed in block ${receipt.blockNumber}`);
       
-      // Extract task ID from logs
       const taskId = this._extractTaskIdFromReceipt(receipt);
       
       if (!taskId) {
@@ -158,7 +145,6 @@ export class DeAsyncSDK extends EventEmitter {
       
       console.log(`🆔 Task ID: ${taskId}`);
       
-      // Wait for completion
       const result = await this._waitForTaskCompletion(taskId, timeout);
       
       return {
@@ -173,7 +159,6 @@ export class DeAsyncSDK extends EventEmitter {
     } catch (error) {
       console.error('❌ Task submission failed:', error.message);
       
-      // Fallback to local execution
       if (fallbackToLocal) {
         console.log('🔄 Attempting local fallback...');
         try {
@@ -201,7 +186,6 @@ export class DeAsyncSDK extends EventEmitter {
           return Number(parsedLog.args.taskId);
         }
       } catch (e) {
-        // Log doesn't match our interface, skip
         continue;
       }
     }
@@ -217,8 +201,7 @@ export class DeAsyncSDK extends EventEmitter {
         reject(new Error(`Task ${taskId} timed out after ${timeout}ms`));
       }, timeout);
 
-      // Store the resolve function to call when task completes
-      this.taskQueue.set(taskId, { 
+      this.taskQueue.set(taskId, {
         resolve: (result) => {
           clearTimeout(timer);
           resolve(result);
@@ -235,7 +218,6 @@ export class DeAsyncSDK extends EventEmitter {
     console.log('💻 Executing locally as fallback...');
     
     try {
-      // Create and execute function
       const func = new Function('return ' + funcCode)();
       const result = await Promise.resolve(func(inputData));
       
@@ -247,12 +229,10 @@ export class DeAsyncSDK extends EventEmitter {
     }
   }
 
-  // Convenience method - main API
   async deAsync(funcCode, inputData, options = {}) {
     return await this.submitTask(funcCode, inputData, options);
   }
 
-  // Utility methods
   async getTask(taskId) {
     const task = await this.contract.getTask(taskId);
     return {
@@ -284,6 +264,7 @@ export class DeAsyncSDK extends EventEmitter {
   }
 
   async getBalance() {
+    // ✅ Fixed: Use provider.getBalance instead of wallet.getBalance
     const balance = await this.contract.balances(this.wallet.address);
     return ethers.formatEther(balance);
   }
