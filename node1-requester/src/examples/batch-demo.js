@@ -9,7 +9,7 @@ async function batchDemo() {
   
   validateEnvironment();
   const deployment = loadDeploymentInfo();
-  const networkConfig = getNetworkConfig('localhost');
+  const networkConfig = getNetworkConfig('monad');
   
   const sdk = new DeAsyncSDK(
     deployment.address,

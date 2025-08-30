@@ -48,14 +48,14 @@ export function getNetworkConfig(networkName) {
       name: 'Mumbai Testnet'
     },
     monad: {
-      url: process.env.PROVIDER_URL_MONAD || 'https://testnet-rpc.monad.xyz',
-      chainId: 41454,
+      url: 'https://monad-testnet.g.alchemy.com/v2/doz4UNKcb6gOk9ls2HQ2G',
+      chainId: 10143,
       name: 'Monad Testnet'
     }
   };
   
   // Default to Sepolia since that's where your contract is deployed
-  return networks[networkName] || networks.sepolia;
+  return networks[networkName] || networks.monad;
 }
 
 export function validateEnvironment() {

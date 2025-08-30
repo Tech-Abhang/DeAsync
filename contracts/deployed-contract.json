@@ -1,8 +1,8 @@
 {
-  "address": "0x01afA2509b8a74B36d02D7C94419431539377F40",
-  "network": "sepolia",
-  "chainId": 11155111,
+  "address": "0x0BB70B410ba87d360f89A9CFb49F889Ac4D98C69",
+  "network": "monad",
+  "chainId": 10143,
   "deployer": "0xA5c7f43162333963149E5AC357917b37974A41f6",
-  "transactionHash": "0x96f101f5a88bd5cfa47a36cbf3f5485bd0ea505cdeb67412e3b8d95d2c6b997f",
-  "deployedAt": "2025-08-30T05:18:24.647Z"
+  "transactionHash": "0x34af1feead0887d597e8b2a08b321e33ecb7b5d9b6d7268e30675951376998db",
+  "deployedAt": "2025-08-30T06:14:30.306Z"
 }

@@ -15,7 +15,7 @@ async function main() {
 
   // Load contract deployment
   const deployment = loadDeploymentInfo();
-  const networkName = process.argv[2] || deployment.network || 'localhost';
+  const networkName = process.argv[2] || deployment.network || 'monad';
   const networkConfig = getNetworkConfig(networkName);
 
   console.log(`📄 Contract: ${deployment.address}`);

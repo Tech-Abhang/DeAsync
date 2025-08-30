@@ -9,7 +9,7 @@ async function simpleDemo() {
   
   validateEnvironment();
   const deployment = loadDeploymentInfo();
-  const networkConfig = getNetworkConfig('sepolia');
+  const networkConfig = getNetworkConfig('monad');
   
   const sdk = new DeAsyncSDK(
     deployment.address,

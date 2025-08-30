@@ -26,8 +26,10 @@ export class DeAsyncSDK extends EventEmitter {
     
     this.isConnected = false;
     this.taskQueue = new Map();
+    this.usePolling = true; // ✅ Force polling mode for Monad
     
-    this._setupEventListeners();
+    // Don't setup event listeners that cause eth_newFilter errors
+    console.log('⚠️ Using polling mode - event filters disabled for Monad compatibility');
   }
 
   async initialize() {
@@ -36,7 +38,7 @@ export class DeAsyncSDK extends EventEmitter {
       const balance = await this.provider.getBalance(this.wallet.address);
       const network = await this.provider.getNetwork();
       
-      console.log(`🔗 Connected to ${network.name} (Chain ID: ${network.chainId})`);
+      console.log(`🔗 Connected to ${network.name || 'Monad'} (Chain ID: ${network.chainId})`);
       console.log(`👤 Wallet: ${this.wallet.address}`);
       console.log(`💰 Balance: ${ethers.formatEther(balance)} ETH`);
       
@@ -52,56 +54,9 @@ export class DeAsyncSDK extends EventEmitter {
     }
   }
 
+  // ✅ No event listeners to avoid eth_newFilter calls
   _setupEventListeners() {
-    this.contract.on('NewTask', (taskId, requester, funcType, data, event) => {
-      const taskInfo = {
-        taskId: Number(taskId),
-        requester,
-        funcType,
-        data,
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
-      };
-      
-      console.log(`🆕 New Task Created: #${taskInfo.taskId}`);
-      this.emit('newTask', taskInfo);
-    });
-
-    this.contract.on('TaskClaimed', (taskId, worker, event) => {
-      const claimInfo = {
-        taskId: Number(taskId),
-        worker,
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
-      };
-      
-      console.log(`👷 Task #${claimInfo.taskId} claimed by: ${worker.slice(0, 8)}...`);
-      this.emit('taskClaimed', claimInfo);
-    });
-
-    this.contract.on('TaskCompleted', (taskId, result, event) => {
-      const completionInfo = {
-        taskId: Number(taskId),
-        result,
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
-      };
-      
-      console.log(`✅ Task #${completionInfo.taskId} completed!`);
-      this.emit('taskCompleted', completionInfo);
-      
-      if (this.taskQueue.has(Number(taskId))) {
-        const { resolve } = this.taskQueue.get(Number(taskId));
-        this.taskQueue.delete(Number(taskId));
-        
-        try {
-          const parsedResult = JSON.parse(result);
-          resolve(parsedResult);
-        } catch (e) {
-          resolve(result);
-        }
-      }
-    });
+    console.log('📊 Event filtering disabled - using polling mode');
   }
 
   async submitTask(funcCode, inputData, options = {}) {
@@ -145,7 +100,8 @@ export class DeAsyncSDK extends EventEmitter {
       
       console.log(`🆔 Task ID: ${taskId}`);
       
-      const result = await this._waitForTaskCompletion(taskId, timeout);
+      // ✅ Use polling instead of events
+      const result = await this._pollForTaskCompletion(taskId, timeout);
       
       return {
         taskId,
@@ -192,26 +148,51 @@ export class DeAsyncSDK extends EventEmitter {
     return null;
   }
 
-  async _waitForTaskCompletion(taskId, timeout) {
-    console.log(`⏳ Waiting for task ${taskId} to complete...`);
+  // ✅ NEW: Polling-based task completion monitoring
+  async _pollForTaskCompletion(taskId, timeout) {
+    console.log(`📊 Polling for task ${taskId} completion...`);
+    
+    const startTime = Date.now();
+    const pollInterval = 2000; // Poll every 2 seconds
     
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.taskQueue.delete(taskId);
-        reject(new Error(`Task ${taskId} timed out after ${timeout}ms`));
-      }, timeout);
+      const pollTimer = setInterval(async () => {
+        try {
+          // Check timeout
+          if (Date.now() - startTime > timeout) {
+            clearInterval(pollTimer);
+            reject(new Error(`Task ${taskId} timed out after ${timeout}ms`));
+            return;
+          }
 
-      this.taskQueue.set(taskId, {
-        resolve: (result) => {
-          clearTimeout(timer);
-          resolve(result);
-        },
-        reject: (error) => {
-          clearTimeout(timer);
-          reject(error);
+          // Poll contract for task status
+          const task = await this.contract.getTask(taskId);
+          
+          if (task.completed) {
+            clearInterval(pollTimer);
+            console.log(`✅ Task ${taskId} completed via polling!`);
+            
+            try {
+              const parsedResult = JSON.parse(task.result);
+              resolve(parsedResult);
+            } catch (e) {
+              resolve(task.result);
+            }
+          } else {
+            console.log(`⏳ Task ${taskId} still pending...`);
+          }
+          
+        } catch (error) {
+          console.error(`❌ Error polling task ${taskId}:`, error.message);
+          // Don't reject here, keep trying unless timeout
         }
-      });
+      }, pollInterval);
     });
+  }
+
+  // ✅ Keep existing _waitForTaskCompletion for compatibility but use polling
+  async _waitForTaskCompletion(taskId, timeout) {
+    return await this._pollForTaskCompletion(taskId, timeout);
   }
 
   async _executeLocally(funcCode, inputData) {
@@ -264,7 +245,6 @@ export class DeAsyncSDK extends EventEmitter {
   }
 
   async getBalance() {
-    // ✅ Fixed: Use provider.getBalance instead of wallet.getBalance
     const balance = await this.contract.balances(this.wallet.address);
     return ethers.formatEther(balance);
   }
@@ -279,7 +259,7 @@ export class DeAsyncSDK extends EventEmitter {
 
   disconnect() {
     console.log('👋 Disconnecting SDK...');
-    this.contract.removeAllListeners();
+    // No event listeners to remove
     this.removeAllListeners();
     this.taskQueue.clear();
     this.isConnected = false;
