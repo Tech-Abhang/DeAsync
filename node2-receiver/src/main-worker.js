@@ -12,8 +12,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 async function main() {
-  console.log("🚀 DeAsync Node2 Worker - Enhanced Competition Mode");
-  console.log("==================================================\n");
+  console.log("🚀 DeAsync Node2 Worker - Enhanced GPU/ML Computing Platform");
+  console.log("============================================================\n");
 
   // Validate environment
   validateEnvironment();
@@ -33,8 +33,8 @@ async function main() {
     `⏰ Polling Interval: ${process.env.POLLING_INTERVAL || 5000}ms\n`
   );
 
-  // Initialize worker
-  const workerName = process.env.WORKER_NAME || "DeAsync-Worker";
+  // Initialize worker with enhanced configuration
+  const workerName = process.env.WORKER_NAME || "DeAsync-Enhanced-Worker";
   const worker = new TaskClaimer(
     deployment.address,
     networkConfig.url,
@@ -56,7 +56,29 @@ async function main() {
       "taskCompleted",
       ({ taskId, result, transactionHash, blockNumber }) => {
         console.log(`✅ Task #${taskId} completed successfully!`);
-        console.log(`📈 Result: ${JSON.stringify(result)}`);
+
+        // Enhanced result logging
+        if (result && typeof result === "object") {
+          if (result.executionMetadata) {
+            console.log(
+              `⚡ GPU Accelerated: ${
+                result.executionMetadata.gpuAccelerated ? "Yes" : "No"
+              }`
+            );
+            console.log(
+              `🧠 ML Inference: ${
+                result.executionMetadata.mlInference ? "Yes" : "No"
+              }`
+            );
+            console.log(`📊 Task Type: ${result.executionMetadata.type}`);
+          }
+          if (result.executionTime) {
+            console.log(
+              `⏱️ Execution Time: ${result.executionTime.toFixed(2)}ms`
+            );
+          }
+        }
+
         console.log(`📋 Transaction: ${transactionHash}`);
         console.log(`📦 Block: ${blockNumber}`);
       }
@@ -65,45 +87,85 @@ async function main() {
     // Start worker polling
     await worker.startPolling();
 
-    // Display periodic stats with more details
+    // Display enhanced periodic stats
     setInterval(async () => {
       const stats = await worker.getWorkerStats();
       if (stats) {
-        console.log("\n📊 Worker Statistics:");
-        console.log(`👤 Address: ${stats.workerAddress}`);
-        console.log(`💰 MONAD Balance: ${stats.ethBalance}`);
+        console.log("\n📊 Enhanced Worker Statistics:");
+        console.log("================================");
+        console.log(`👤 Worker: ${workerName}`);
+        console.log(`📍 Address: ${stats.workerAddress}`);
+        console.log(`💰 MONAD Balance: ${stats.ethBalance} MONAD`);
         console.log(`💎 Earned: ${stats.earnedBalance} MONAD`);
         console.log(`📈 Network Tasks: ${stats.totalNetworkTasks}`);
         console.log(`🔧 Active Tasks: ${stats.activeTasks}`);
         console.log(`📍 Last Processed: Task #${stats.lastProcessedTask}`);
-        console.log(`⛽ Current Gas: ${stats.currentGasPrice} gwei`);
-        console.log(`🟢 Status: ${stats.isRunning ? "Running" : "Stopped"}\n`);
-      }
-    }, 30000); // Every 30 seconds
+        console.log(`⛽ Current Gas: ${stats.currentGasPrice || "N/A"} gwei`);
+        console.log(`🟢 Status: ${stats.isRunning ? "Running" : "Stopped"}`);
 
-    // Check for low balance warning
+        // Enhanced capabilities display
+        console.log(`\n🚀 Enhanced Capabilities:`);
+        console.log(`   GPU Computing: Available`);
+        console.log(`   ML Inference: Available`);
+        console.log(`   Scientific Computing: Available`);
+        console.log(`   Cryptographic Operations: Available`);
+        console.log(`   Image Processing: Available`);
+        console.log(`   Text Analysis: Available`);
+
+        console.log(`\n📋 Supported Task Types:`);
+        console.log(`   • JavaScript (legacy)`);
+        console.log(`   • GPU-accelerated computing`);
+        console.log(`   • Machine Learning inference`);
+        console.log(`   • Scientific/mathematical computing`);
+        console.log(`   • Cryptographic operations`);
+        console.log(`   • Image processing & computer vision`);
+        console.log(`   • Text processing & NLP`);
+        console.log(`   • Batch processing workflows\n`);
+      }
+    }, 45000); // Every 45 seconds for enhanced stats
+
+    // Enhanced balance monitoring with threshold alerts
     setInterval(async () => {
       try {
         const balance = await worker.provider.getBalance(worker.wallet.address);
         const balanceETH = parseFloat(ethers.formatEther(balance));
 
         if (balanceETH < 0.01) {
-          // Less than 0.01 MONAD
           console.log(
             `⚠️ WARNING: Low MONAD balance (${balanceETH.toFixed(
+              6
+            )} MONAD). Consider adding more funds for enhanced computing tasks.`
+          );
+        } else if (balanceETH < 0.05) {
+          console.log(
+            `📊 Balance update: ${balanceETH.toFixed(
               4
-            )} MONAD). Consider adding more funds.`
+            )} MONAD available for task execution.`
           );
         }
       } catch (error) {
         console.warn("⚠️ Could not check balance:", error.message);
       }
-    }, 60000); // Every minute
+    }, 120000); // Every 2 minutes
+
+    // Resource monitoring alerts (simulated)
+    setInterval(() => {
+      const memUsage = process.memoryUsage();
+      const memUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+
+      console.log(`💾 Memory usage: ${memUsedMB}MB heap`);
+
+      if (memUsedMB > 500) {
+        console.log(`⚠️ High memory usage detected: ${memUsedMB}MB`);
+      }
+    }, 180000); // Every 3 minutes
   } catch (error) {
-    console.error("❌ Worker failed:", error.message);
+    console.error("❌ Enhanced Worker failed:", error.message);
     process.exit(1);
   }
 }
+
+// Enhanced graceful shutdown handling
 
 // Enhanced graceful shutdown handling
 process.on("SIGINT", async () => {

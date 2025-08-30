@@ -280,14 +280,34 @@ export class TaskClaimer extends EventEmitter {
       // Import TaskExecutor here to avoid circular dependencies
       const { TaskExecutor } = await import("./task-executor.js");
       const executor = new TaskExecutor({
-        maxExecutionTime: 30000,
+        maxExecutionTime: 120000, // 2 minutes for complex tasks
+        enableDetailedMetrics: true,
+        gpu: {
+          mode: "gpu", // Try GPU first, fallback to CPU
+          maxExecutionTime: 120000,
+        },
+        ml: {
+          cacheTimeoutSeconds: 3600,
+          maxCachedModels: 3,
+          backend: "node",
+        },
+        monitoring: {
+          monitoringInterval: 15000,
+          enableDetailedMetrics: true,
+        },
       });
 
-      // Execute the task
-      const result = await executor.executeTask(taskData.data);
+      // Initialize the enhanced executor
+      await executor.initialize();
+
+      // Execute the task with enhanced capabilities
+      const result = await executor.executeTask(taskData.data, taskId);
 
       // Submit result to blockchain
-      await this.submitTaskResult(taskId, result);
+      await this.submitTaskResult(taskId, result.result || result);
+
+      // Cleanup executor resources
+      await executor.cleanup();
     } catch (error) {
       console.error(`❌ Failed to execute task #${taskId}: ${error.message}`);
     }

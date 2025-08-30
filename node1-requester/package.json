@@ -15,7 +15,11 @@
   },
   "dependencies": {
     "ethers": "^6.8.0",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "@tensorflow/tfjs": "^4.15.0",
+    "node-fetch": "^3.3.2",
+    "jimp": "^0.22.10",
+    "mathjs": "^12.2.1"
   },
   "engines": {
     "node": ">=18.17.0"
