@@ -1,0 +1,23 @@
+{
+  "name": "deasync-node1-requester",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "DeAsync Node1 Requester - Task submission and management",
+  "main": "main-requester.js",
+  "scripts": {
+    "start": "node main-requester.js",
+    "demo:simple": "node src/examples/simple-demo.js",
+    "demo:batch": "node src/examples/batch-demo.js",
+    "test:local": "node main-requester.js localhost",
+    "test:sepolia": "node main-requester.js sepolia",
+    "test:mumbai": "node main-requester.js mumbai",
+    "test:monad": "node main-requester.js monad"
+  },
+  "dependencies": {
+    "ethers": "^6.8.0",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "deasync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Decentralized Async Computation Network",
+  "author": "Your Team Name",
+  "license": "MIT",
+  "workspaces": [
+    "contracts",
+    "sdk",
+    "frontend", 
+    "scripts"
+  ],
+  "scripts": {
+    "install-all": "npm install && npm run install-contracts && npm run install-sdk && npm run install-frontend && npm run install-scripts && npm run install-rust",
+    "install-contracts": "cd contracts && npm install",
+    "install-sdk": "cd sdk && npm install", 
+    "install-frontend": "cd frontend && npm install",
+    "install-scripts": "cd scripts && npm install",
+    "install-rust": "cd rust-worker && cargo build --release",
+    "start-blockchain": "cd contracts && npm run node",
+    "deploy-local": "cd contracts && npm run deploy:local",
+    "start-worker": "cd rust-worker && ./target/release/rust-worker",
+    "start-frontend": "cd frontend && npm start",
+    "test-demo": "cd scripts && npm run requester",
+    "setup": "npm run install-all && echo '✅ Setup complete! Check README.md for next steps.'"
+  },
+  "engines": {
+    "node": ">=18.17.0",
+    "npm": ">=9.6.7"
+  },
+  "keywords": [
+    "blockchain",
+    "decentralized",
+    "async",
+    "computation",
+    "rust",
+    "ethereum"
+  ]
+}
