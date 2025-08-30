@@ -1,0 +1,23 @@
+{
+  "name": "deasync-node2-receiver",
+  "version": "1.1.0",
+  "type": "module",
+  "description": "DeAsync Node2 Worker - Competitive task claimer and executor",
+  "main": "src/main-worker.js",
+  "scripts": {
+    "start": "node src/main-worker.js",
+    "worker:monad": "node src/main-worker.js monad",
+    "worker:sepolia": "node src/main-worker.js sepolia",
+    "worker:local": "node src/main-worker.js localhost",
+    "dev": "node --watch src/main-worker.js",
+    "stats": "node src/scripts/worker-stats.js"
+  },
+  "dependencies": {
+    "ethers": "^6.8.0",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "keywords": ["blockchain", "ethereum", "async", "worker", "compute", "monad"]
+}
