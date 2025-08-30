@@ -2,6 +2,7 @@
 
 import { TaskClaimer } from './worker/task-claimer.js';
 import { loadDeploymentInfo, getNetworkConfig, validateEnvironment } from './utils/contract-utils.js';
+import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -69,11 +70,15 @@ async function main() {
 
     // Check for low balance warning
     setInterval(async () => {
-      const balance = await worker.provider.getBalance(worker.wallet.address);
-      const balanceETH = parseFloat(ethers.formatEther(balance));
-      
-      if (balanceETH < 0.01) { // Less than 0.01 ETH
-        console.log(`⚠️ WARNING: Low ETH balance (${balanceETH.toFixed(4)} ETH). Consider adding more funds.`);
+      try {
+        const balance = await worker.provider.getBalance(worker.wallet.address);
+        const balanceETH = parseFloat(ethers.formatEther(balance));
+        
+        if (balanceETH < 0.01) { // Less than 0.01 ETH
+          console.log(`⚠️ WARNING: Low ETH balance (${balanceETH.toFixed(4)} ETH). Consider adding more funds.`);
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not check balance:', error.message);
       }
     }, 60000); // Every minute
 
@@ -102,7 +107,7 @@ process.on('unhandledRejection', (error) => {
 
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught exception:', error);
-  console.log('🔄 Worker restarting...');
+  console.log('🔄 Worker will restart in 5 seconds...');
   
   // Restart the worker
   setTimeout(() => {

@@ -29,10 +29,11 @@ export class TaskClaimer extends EventEmitter {
     this.claimedTasks = new Map();
     this.pollingInterval = process.env.POLLING_INTERVAL || 5000;
     
-    // New properties for competitive claiming
+    // Nonce management properties
+    this.nonceLock = Promise.resolve(); // Serializes nonce operations
+    this.nextNonce = null;
+    this.pendingTransactions = new Map();
     this.lastProcessedTaskId = 0;
-    this.maxConcurrentClaims = 1;
-    this.claimQueue = [];
   }
 
   async initialize() {
@@ -48,8 +49,11 @@ export class TaskClaimer extends EventEmitter {
       const taskCount = await this.contract.taskCount();
       console.log(`📊 Current task count on network: ${taskCount}`);
       
-      // Initialize last processed task ID
+      // Initialize nonce
+      this.nextNonce = await this.provider.getTransactionCount(this.wallet.address, 'latest');
       this.lastProcessedTaskId = Number(taskCount);
+      
+      console.log(`🔢 Starting nonce: ${this.nextNonce}`);
       
       this.emit('initialized');
       return true;
@@ -58,6 +62,30 @@ export class TaskClaimer extends EventEmitter {
       console.error('❌ Failed to initialize worker:', error.message);
       throw error;
     }
+  }
+
+  async _getNextNonce() {
+    // Serialize nonce access to prevent race conditions
+    const currentLock = this.nonceLock;
+    let releaseNext;
+    this.nonceLock = new Promise(resolve => releaseNext = resolve);
+    
+    await currentLock;
+    
+    try {
+      if (this.nextNonce === null) {
+        this.nextNonce = await this.provider.getTransactionCount(this.wallet.address, 'latest');
+      }
+      return this.nextNonce++;
+    } finally {
+      releaseNext();
+    }
+  }
+
+  async _refreshNonce() {
+    // Refresh nonce from network in case of errors
+    this.nextNonce = await this.provider.getTransactionCount(this.wallet.address, 'latest');
+    console.log(`🔄 Refreshed nonce to: ${this.nextNonce}`);
   }
 
   async startPolling() {
@@ -102,46 +130,31 @@ export class TaskClaimer extends EventEmitter {
       console.log('🔍 Checking for available tasks...');
       
       // Get latest tasks from contract
-      const latestTasks = await this.contract.getLatestTasks(10);
-      let claimsAttempted = 0;
-      const maxClaimsPerRound = 2; // Limit claims per polling round
-      
-      // Filter for truly available tasks
-      const availableTasks = latestTasks.filter(task => {
-        const taskId = Number(task.id);
-        return (
-          task.worker === ethers.ZeroAddress &&  // Unclaimed
-          !task.completed &&                     // Not completed
-          !this.claimedTasks.has(taskId) &&      // Not already claimed by us
-          taskId > this.lastProcessedTaskId      // New task
-        );
-      });
-
-      if (availableTasks.length === 0) {
-        console.log('📭 No new available tasks found');
-        return;
-      }
-
-      console.log(`🎯 Found ${availableTasks.length} available tasks`);
+      const latestTasks = await this.contract.getLatestTasks(5);
       
       for (const task of latestTasks) {
-        if (claimsAttempted >= maxClaimsPerRound) break;
-        
         const taskId = Number(task.id);
         
-        // Skip if already processed
-        if (taskId <= this.lastProcessedTaskId) continue;
+        // Skip already processed tasks
+        if (taskId <= this.lastProcessedTaskId) {
+          continue;
+        }
         
+        // Skip if task is already completed or claimed by someone else
+        if (task.completed || (task.worker !== ethers.ZeroAddress && task.worker !== this.wallet.address)) {
+          this.lastProcessedTaskId = Math.max(this.lastProcessedTaskId, taskId);
+          continue;
+        }
+
+        // Skip if we already claimed this task
+        if (this.claimedTasks.has(taskId)) {
+          continue;
+        }
+
         // Available for claiming
         if (task.worker === ethers.ZeroAddress && !task.completed) {
           console.log(`🎯 Found unclaimed task #${taskId} - attempting to claim`);
-          
-          // Random delay to avoid all workers claiming simultaneously
-          const randomDelay = Math.random() * 2000; // 0-2 seconds
-          await new Promise(resolve => setTimeout(resolve, randomDelay));
-          
-          await this.attemptClaimTaskWithRetry(taskId);
-          claimsAttempted++;
+          await this.attemptClaimTask(taskId);
         }
         
         // Execute our claimed tasks
@@ -158,93 +171,66 @@ export class TaskClaimer extends EventEmitter {
     }
   }
 
-  async attemptClaimTaskWithRetry(taskId, maxRetries = 2) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`📋 Attempting to claim task #${taskId} (Attempt ${attempt}/${maxRetries})`);
-        
-        // Check if task is still available before each attempt
-        const task = await this.contract.getTask(taskId);
-        if (task.worker !== ethers.ZeroAddress || task.completed) {
-          console.log(`⚠️ Task #${taskId} already claimed or completed, skipping`);
-          return;
-        }
-        
-        // Increase gas price with each retry
-        const baseGasPrice = await this.provider.getGasPrice();
-        const multiplier = 100n + BigInt(20 * attempt); // 120%, 140%, 160%
-        const gasPrice = baseGasPrice * multiplier / 100n;
-        
-        const tx = await this.contract.claimTask(taskId, {
-          gasLimit: 200000,
-          gasPrice: gasPrice
-        });
-        
-        console.log(`⏳ Claim transaction submitted: ${tx.hash} (Gas: ${ethers.formatUnits(gasPrice, 'gwei')} gwei)`);
-        
-        const receipt = await tx.wait();
-        console.log(`✅ Task #${taskId} claimed successfully in block ${receipt.blockNumber}`);
-        
-        // Track claimed task
-        this.claimedTasks.set(taskId, {
-          claimedAt: Date.now(),
-          transactionHash: tx.hash
-        });
-        
-        this.emit('taskClaimed', { taskId, transactionHash: tx.hash });
-        return; // Success, exit retry loop
-        
-      } catch (error) {
-        const errorType = this.handleClaimError(error, taskId);
-        
-        if (errorType === 'OUTBID' || errorType === 'ALREADY_CLAIMED') {
-          if (attempt < maxRetries) {
-            const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-            console.log(`⏱️ Task #${taskId} claim failed, retrying in ${delay/1000}s...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            continue;
-          } else {
-            console.log(`⚠️ Task #${taskId} claimed by another worker after ${maxRetries} attempts`);
-            return;
-          }
-        } else if (errorType === 'INSUFFICIENT_FUNDS') {
-          console.error(`💰 Stopping claims due to insufficient funds`);
-          return;
-        } else {
-          console.error(`❌ Failed to claim task #${taskId}: ${error.message}`);
-          return;
-        }
+  async attemptClaimTask(taskId) {
+    try {
+      console.log(`📋 Attempting to claim task #${taskId}`);
+      
+      // Check balance before claiming
+      const balance = await this.provider.getBalance(this.wallet.address);
+      const balanceETH = parseFloat(ethers.formatEther(balance));
+      
+      if (balanceETH < 0.005) {
+        console.error(`💰 Insufficient balance: ${balanceETH.toFixed(6)} ETH. Skipping claim.`);
+        return;
       }
+      
+      // Get next nonce in a thread-safe way
+      const nonce = await this._getNextNonce();
+      
+      // Get optimal gas settings
+      const feeData = await this.provider.getFeeData();
+      const gasPrice = feeData.gasPrice || ethers.parseUnits('2.0', 'gwei');
+      
+      console.log(`📋 Claiming task #${taskId} with nonce ${nonce} and gas ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
+      
+      const tx = await this.contract.claimTask(taskId, {
+        nonce: nonce,
+        gasLimit: 200000,
+        gasPrice: gasPrice
+      });
+      
+      console.log(`⏳ Claim transaction submitted: ${tx.hash}`);
+      this.pendingTransactions.set(nonce, { taskId, hash: tx.hash, type: 'claim' });
+      
+      const receipt = await tx.wait();
+      console.log(`✅ Task #${taskId} claimed successfully in block ${receipt.blockNumber}`);
+      
+      // Clean up tracking
+      this.pendingTransactions.delete(nonce);
+      
+      // Track claimed task
+      this.claimedTasks.set(taskId, {
+        claimedAt: Date.now(),
+        transactionHash: tx.hash
+      });
+      
+      this.emit('taskClaimed', { taskId, transactionHash: tx.hash });
+      
+    } catch (error) {
+      // Handle nonce-related errors specifically
+      if (error.code === 'NONCE_EXPIRED' || 
+          error.message.includes('nonce too low') ||
+          error.message.includes('nonce has already been used')) {
+        
+        console.log(`🔢 Task #${taskId}: Nonce issue detected - ${error.message}`);
+        await this._refreshNonce();
+        
+        // Don't retry immediately - let next polling cycle handle it
+        return;
+      }
+      
+      console.error(`❌ Failed to claim task #${taskId}: ${error.message}`);
     }
-  }
-
-  handleClaimError(error, taskId) {
-    const errorMessage = error.message.toLowerCase();
-    
-    if (errorMessage.includes('higher priority') || 
-        errorMessage.includes('replacement transaction underpriced')) {
-      console.log(`⚠️ Task #${taskId}: Another worker submitted higher gas price`);
-      return 'OUTBID';
-    }
-    
-    if (errorMessage.includes('already claimed') || 
-        errorMessage.includes('task not available')) {
-      console.log(`⚠️ Task #${taskId}: Already claimed by another worker`);
-      return 'ALREADY_CLAIMED';
-    }
-    
-    if (errorMessage.includes('insufficient funds')) {
-      console.error(`💰 Task #${taskId}: Insufficient ETH balance for gas`);
-      return 'INSUFFICIENT_FUNDS';
-    }
-    
-    if (errorMessage.includes('nonce')) {
-      console.error(`🔢 Task #${taskId}: Nonce issue - ${error.message}`);
-      return 'NONCE_ERROR';
-    }
-    
-    console.error(`❌ Task #${taskId}: Unknown error - ${error.message}`);
-    return 'UNKNOWN';
   }
 
   async executeClaimedTask(taskId, taskData) {
@@ -274,21 +260,27 @@ export class TaskClaimer extends EventEmitter {
       
       const resultJson = JSON.stringify(result);
       
-      // Use higher gas price for result submission to ensure it goes through
-      const baseGasPrice = await this.provider.getGasPrice();
-      const gasPrice = baseGasPrice * 110n / 100n; // 10% higher than current
+      // Get next nonce
+      const nonce = await this._getNextNonce();
+      
+      // Get gas settings
+      const feeData = await this.provider.getFeeData();
+      const gasPrice = feeData.gasPrice || ethers.parseUnits('2.0', 'gwei');
       
       const tx = await this.contract.submitResult(taskId, resultJson, {
+        nonce: nonce,
         gasLimit: 300000,
         gasPrice: gasPrice
       });
       
       console.log(`⏳ Result submission transaction: ${tx.hash}`);
+      this.pendingTransactions.set(nonce, { taskId, hash: tx.hash, type: 'submit' });
       
       const receipt = await tx.wait();
       console.log(`✅ Result submitted for task #${taskId} in block ${receipt.blockNumber}`);
       
-      // Remove from our tracking
+      // Clean up tracking
+      this.pendingTransactions.delete(nonce);
       this.claimedTasks.delete(taskId);
       
       this.emit('taskCompleted', { 
@@ -299,12 +291,19 @@ export class TaskClaimer extends EventEmitter {
       });
       
     } catch (error) {
-      console.error(`❌ Failed to submit result for task #${taskId}: ${error.message}`);
-      
-      // Don't remove from tracking if submission failed - we can retry
-      if (error.message.includes('higher priority') || error.message.includes('replacement')) {
+      if (error.code === 'NONCE_EXPIRED' || 
+          error.message.includes('nonce too low') ||
+          error.message.includes('nonce has already been used')) {
+        
+        console.log(`🔢 Task #${taskId} result submission: Nonce issue - ${error.message}`);
+        await this._refreshNonce();
+        
+        // Keep task in claimed tasks for retry on next cycle
         console.log(`⏱️ Will retry result submission for task #${taskId} in next round`);
+        return;
       }
+      
+      console.error(`❌ Failed to submit result for task #${taskId}: ${error.message}`);
     }
   }
 
@@ -313,7 +312,6 @@ export class TaskClaimer extends EventEmitter {
       const balance = await this.provider.getBalance(this.wallet.address);
       const contractBalance = await this.contract.balances(this.wallet.address);
       const taskCount = await this.contract.taskCount();
-      const gasPrice = await this.provider.getGasPrice();
       
       return {
         workerAddress: this.wallet.address,
@@ -322,7 +320,8 @@ export class TaskClaimer extends EventEmitter {
         totalNetworkTasks: taskCount.toString(),
         activeTasks: this.claimedTasks.size,
         lastProcessedTask: this.lastProcessedTaskId,
-        currentGasPrice: ethers.formatUnits(gasPrice, 'gwei'),
+        pendingTxs: this.pendingTransactions.size,
+        currentNonce: this.nextNonce,
         isRunning: this.isRunning
       };
     } catch (error) {
@@ -335,7 +334,8 @@ export class TaskClaimer extends EventEmitter {
     try {
       console.log('💸 Withdrawing earned balance...');
       
-      const tx = await this.contract.withdrawBalance();
+      const nonce = await this._getNextNonce();
+      const tx = await this.contract.withdrawBalance({ nonce });
       const receipt = await tx.wait();
       
       console.log('✅ Balance withdrawn successfully');
